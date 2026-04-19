@@ -605,6 +605,21 @@ function resetCounter(username) {
     loginCounterElement.innerHTML = "0";
 }
 
+function resetMfaCounter(username) {
+    top.restoreSession();
+    request = new FormData;
+    request.append("function", "resetMfaUsernameCounter");
+    request.append("username", username);
+    request.append("csrf_token_form", <?php echo js_escape(CsrfUtils::collectCsrfToken($session, 'counter')); ?>);
+    fetch("<?php echo OEGlobalsBag::getInstance()->get("webroot"); ?>/library/ajax/login_counter_ip_tracker.php", {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: request
+    });
+    let mfaCounterElement = document.getElementById('mfa-counter-' + username);
+    mfaCounterElement.innerHTML = "0";
+}
+
 </script>
 
 </head>
@@ -666,6 +681,7 @@ function resetCounter(username) {
                             }
                             ?>
                             <th><?php echo xlt('Failed Login Counter'); ?></th>
+                            <th><?php echo xlt('Failed MFA Counter'); ?></th>
                         </tr>
                     <tbody>
                         <?php
@@ -757,6 +773,26 @@ function resetCounter(username) {
                                         if (!empty($autoBlockEnd)) {
                                             echo ' (' . xlt("Autoblock ends on") . ' ' . text(DateFormatterUtils::oeFormatDateTime($autoBlockEnd)) . ')';
                                         }
+                                    }
+                                } else {
+                                    echo '0';
+                                }
+                            }
+                            echo '</td>';
+                            if (empty($iter["active"])) {
+                                echo '<td>';
+                                echo xlt('Not Applicable');
+                            } else {
+                                echo '<td id="mfa-counter-' . attr($iter["username"]) . '">';
+                                $queryMfaCounter = privQuery("SELECT `mfa_fail_counter`, `mfa_last_fail` FROM `users_secure` WHERE BINARY `username` = ?", [$iter["username"]]);
+                                if (!empty($queryMfaCounter['mfa_fail_counter'])) {
+                                    echo text($queryMfaCounter['mfa_fail_counter']);
+                                    if (!empty($queryMfaCounter['mfa_last_fail'])) {
+                                        echo ' (' . xlt('last on') . ' ' . text(DateFormatterUtils::oeFormatDateTime($queryMfaCounter['mfa_last_fail'])) . ')';
+                                    }
+                                    echo ' ' . '<button type="button" class="btn btn-sm btn-danger ml-1" onclick="resetMfaCounter(' . attr_js($iter["username"]) . ')">' . xlt("Reset MFA Counter") . '</button>';
+                                    if (OEGlobalsBag::getInstance()->getInt('mfa_max_failed_logins') != 0 && ($queryMfaCounter['mfa_fail_counter'] >= OEGlobalsBag::getInstance()->getInt('mfa_max_failed_logins'))) {
+                                        echo '<br>' . xlt("Currently MFA Blocked");
                                     }
                                 } else {
                                     echo '0';

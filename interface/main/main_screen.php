@@ -23,6 +23,7 @@ use OpenEMR\Common\Auth\AuthUtils;
 use OpenEMR\Common\Crypto\KeyVersion;
 use OpenEMR\Common\Crypto\PasswordBasedCrypto;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Logging\EventAuditLogger;
 use OpenEMR\Common\Session\SessionTracker;
 use OpenEMR\Common\Session\SessionWrapperFactory;
 use OpenEMR\Common\Utils\RandomGenUtils;
@@ -182,6 +183,12 @@ if (isset($_POST['new_login_session_management'])) {
 
                 $form_response = '';
 
+                // Check if user has exceeded the maximum number of failed MFA attempts
+                if (!AuthUtils::checkMfaFailedCounter($_POST['authUser'] ?? '')) {
+                    $errormsg = xl("Too many failed MFA attempts. Please contact your administrator.");
+                    $errortype = "TOTP";
+                } else {
+
                 $res1 = sqlQuery(
                     "SELECT a.var1 FROM login_mfa_registrations AS a WHERE a.user_id = ? AND a.method = 'TOTP'",
                     [$session->get('authUserID')]
@@ -225,48 +232,91 @@ if (isset($_POST['new_login_session_management'])) {
                     $form_response = $googleAuth->validateCode($_POST['totp']);
                 }
 
-                if ($form_response) {
-                    // Keep track of when challenges were last answered correctly.
-                    privStatement(
-                        "UPDATE users_secure SET last_challenge_response = NOW() WHERE id = ?",
-                        [$session->get('authUserID')]
-                    );
-                } else {
-                    $errormsg = xl("The code you entered was not valid");
-                    $errortype = "TOTP";
-                }
-            } elseif ($isU2F) { // Otherwise use U2F METHOD
-                // We have key data, check if it matches what was registered.
-                $tmprow = sqlQuery("SELECT login_work_area FROM users_secure WHERE id = ?", [$userid]);
-                try {
-                    $registration = $u2f->doAuthenticate(
-                        json_decode((string) $tmprow['login_work_area']), // these are the original challenge requests
-                        $registrations,
-                        json_decode((string) $_POST['form_response'])
-                    );
-                    // Stored registration data needs to be updated because the usage count has changed.
-                    // We have to use the matching registered key.
-                    $strhandle = json_encode($registration->keyHandle);
-                    if (isset($regs[$strhandle])) {
-                        sqlStatement(
-                            "UPDATE login_mfa_registrations SET `var1` = ? WHERE " .
-                            "`user_id` = ? AND `method` = 'U2F' AND `name` = ?",
-                            [json_encode($registration), $userid, $regs[$strhandle]]
+                    if ($form_response) {
+                        // Keep track of when challenges were last answered correctly.
+                        privStatement(
+                            "UPDATE users_secure SET last_challenge_response = NOW() WHERE id = ?",
+                            [$session->get('authUserID')]
                         );
+                        AuthUtils::resetMfaFailedCounter($_POST['authUser'] ?? '');
                     } else {
-                        error_log("Unexpected keyHandle returned from doAuthenticate(): '" . errorLogEscape($strhandle) . "'");
+                        // Log failed TOTP authentication attempt
+                        $ip = collectIpAddresses();
+                        $username = $_POST['authUser'] ?? '';
+                        $userInfo = privQuery("SELECT id FROM users WHERE BINARY username = ?", [$username]);
+                        $authGroup = '';
+                        if (!empty($userInfo['id'])) {
+                            $userService = new \OpenEMR\Services\UserService();
+                            $authGroup = $userService->getAuthGroupForUser($username);
+                        }
+                        EventAuditLogger::getInstance()->newEvent(
+                            'login',
+                            $username,
+                            $authGroup,
+                            0,
+                            "failure: " . $ip['ip_string'] . ". TOTP code incorrect"
+                        );
+                        AuthUtils::incrementMfaFailedCounter($username);
+                        $errormsg = xl("The code you entered was not valid");
+                        $errortype = "TOTP";
                     }
-                    // Keep track of when challenges were last answered correctly.
-                    sqlStatement(
-                        "UPDATE users_secure SET last_challenge_response = NOW() WHERE id = ?",
-                        [$session->get('authUserID')]
-                    );
-                } catch (\u2flib_server\Error $e) {
-                    // Authentication failed so we will build the U2F form again.
+                } // end checkMfaFailedCounter
+            } elseif ($isU2F) { // Otherwise use U2F METHOD
+                $username = $_POST['authUser'] ?? '';
+                // Check if user has exceeded the maximum number of failed MFA attempts
+                if (!AuthUtils::checkMfaFailedCounter($username)) {
                     $form_response = '';
-                    $errormsg = xl('U2F Key Authentication error') . ": " . $e->getMessage();
+                    $errormsg = xl("Too many failed MFA attempts. Please contact your administrator.");
                     $errortype = "U2F";
-                }
+                } else {
+                    // We have key data, check if it matches what was registered.
+                    $tmprow = sqlQuery("SELECT login_work_area FROM users_secure WHERE id = ?", [$userid]);
+                    try {
+                        $registration = $u2f->doAuthenticate(
+                            json_decode((string) $tmprow['login_work_area']), // these are the original challenge requests
+                            $registrations,
+                            json_decode((string) $_POST['form_response'])
+                        );
+                        // Stored registration data needs to be updated because the usage count has changed.
+                        // We have to use the matching registered key.
+                        $strhandle = json_encode($registration->keyHandle);
+                        if (isset($regs[$strhandle])) {
+                            sqlStatement(
+                                "UPDATE login_mfa_registrations SET `var1` = ? WHERE " .
+                                "`user_id` = ? AND `method` = 'U2F' AND `name` = ?",
+                                [json_encode($registration), $userid, $regs[$strhandle]]
+                            );
+                        } else {
+                            error_log("Unexpected keyHandle returned from doAuthenticate(): '" . errorLogEscape($strhandle) . "'");
+                        }
+                        // Keep track of when challenges were last answered correctly.
+                        sqlStatement(
+                            "UPDATE users_secure SET last_challenge_response = NOW() WHERE id = ?",
+                            [$session->get('authUserID')]
+                        );
+                        AuthUtils::resetMfaFailedCounter($username);
+                    } catch (\u2flib_server\Error $e) {
+                        // Authentication failed so we will build the U2F form again.
+                        $form_response = '';
+                        $ip = collectIpAddresses();
+                        $userInfo = privQuery("SELECT id FROM users WHERE BINARY username = ?", [$username]);
+                        $authGroup = '';
+                        if (!empty($userInfo['id'])) {
+                            $userService = new \OpenEMR\Services\UserService();
+                            $authGroup = $userService->getAuthGroupForUser($username);
+                        }
+                        EventAuditLogger::getInstance()->newEvent(
+                            'login',
+                            $username,
+                            $authGroup,
+                            0,
+                            "failure: " . $ip['ip_string'] . ". U2F authentication error: " . $e->getMessage()
+                        );
+                        AuthUtils::incrementMfaFailedCounter($username);
+                        $errormsg = xl('U2F Key Authentication error') . ": " . $e->getMessage();
+                        $errortype = "U2F";
+                    }
+                } // end checkMfaFailedCounter
             } else {
                 // do nothing
                 $form_response = '';
