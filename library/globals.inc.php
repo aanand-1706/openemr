@@ -2198,6 +2198,13 @@ $GLOBALS_METADATA = [
             xl('Maximum Failed Login Attempts For User (0 for no maximum).')
         ],
 
+        'mfa_max_failed_logins' => [
+            xl('Maximum Failed MFA Attempts For User'),
+            'num',                            // data type
+            '10',                             // default
+            xl('Maximum Failed MFA Attempts For User before blocking (0 for no maximum).')
+        ],
+
         'time_reset_password_max_failed_logins' => [
             xl('Time (seconds) to Reset Maximum Failed Login Attempts For User'),
             'num',                            // data type

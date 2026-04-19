@@ -39,6 +39,19 @@ if ($_POST['function'] == 'resetUsernameCounter') {
     exit;
 }
 
+if ($_POST['function'] == 'resetMfaUsernameCounter') {
+    if (!AclMain::aclCheckCore('admin', 'users')) {
+        error_log("Failed ACL access to login_counter_ip_tracker.php script for resetMfaUsernameCounter function");
+        exit;
+    }
+
+    if (empty($_POST['username'])) {
+        exit;
+    }
+    AuthUtils::resetMfaFailedCounter($_POST['username']);
+    exit;
+}
+
 
 // all function below require admin super access
 if (!AclMain::aclCheckCore('admin', 'super')) {
