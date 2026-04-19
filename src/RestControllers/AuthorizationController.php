@@ -882,12 +882,33 @@ class AuthorizationController
             }
             //Check the validity of the authentication token
             if ($request->request->get('user_role') === 'api'  && $mfa->isMfaRequired() && !is_null($mfaToken)) {
-                if (!$mfaToken || !$mfa->check($mfaToken, $request->request->get('mfa_type'))) {
+                $username = $request->request->get('username', '');
+                $mfaType = $request->request->get('mfa_type', 'unknown');
+                if (!AuthUtils::checkMfaFailedCounter($username)) {
+                    $loginTwigVars['mfaRequired'] = true;
+                    $loginTwigVars['invalid'] = xl("Too many failed MFA attempts. Please contact your administrator.");
+                    return $this->renderTwigPage('oauth2/authorize/login', 'oauth2/oauth2-login.html.twig', $loginTwigVars);
+                }
+                if (!$mfaToken || !$mfa->check($mfaToken, $mfaType)) {
+                    // Log failed MFA authentication attempt
+                    $ip = collectIpAddresses();
+                    $userService = new UserService();
+                    $authGroup = !empty($username) ? $userService->getAuthGroupForUser($username) : '';
+                    EventAuditLogger::getInstance()->newEvent(
+                        'login',
+                        $username,
+                        $authGroup,
+                        0,
+                        "failure: " . $ip['ip_string'] . ". OAuth2 MFA ($mfaType) code incorrect"
+                    );
+                    AuthUtils::incrementMfaFailedCounter($username);
                     $invalid = xl("Sorry, Invalid code!");
                     $loginTwigVars['mfaRequired'] = true;
                     $loginTwigVars['invalid'] = $invalid;
                     return $this->renderTwigPage('oauth2/authorize/login', 'oauth2/oauth2-login.html.twig', $loginTwigVars);
                 }
+                // MFA succeeded — reset the counter
+                AuthUtils::resetMfaFailedCounter($username);
             }
         } catch (Throwable $error) {
             $loginTwigVars['mfaRequired'] = true;

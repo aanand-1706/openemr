@@ -1240,6 +1240,36 @@ class AuthUtils
     }
 
     /**
+     * Check if user has exceeded the maximum number of failed MFA attempts.
+     * Returns true if the user is allowed to attempt MFA, false if blocked.
+     */
+    public static function checkMfaFailedCounter(string $user): bool
+    {
+        if (OEGlobalsBag::getInstance()->getInt('mfa_max_failed_logins') === 0) {
+            // skip the check if turned off
+            return true;
+        }
+        $query = privQuery("SELECT `mfa_fail_counter` FROM `users_secure` WHERE BINARY `username` = ?", [$user]);
+        return $query['mfa_fail_counter'] < OEGlobalsBag::getInstance()->getInt('mfa_max_failed_logins');
+    }
+
+    /**
+     * Increment the MFA failed counter for a user.
+     */
+    public static function incrementMfaFailedCounter(string $user): void
+    {
+        privStatement("UPDATE `users_secure` SET `total_mfa_fail_counter` = total_mfa_fail_counter+1, `mfa_fail_counter` = mfa_fail_counter+1, `mfa_last_fail` = NOW() WHERE BINARY `username` = ?", [$user]);
+    }
+
+    /**
+     * Reset the MFA failed counter for a user upon successful MFA.
+     */
+    public static function resetMfaFailedCounter(string $user): void
+    {
+        privStatement("UPDATE `users_secure` SET `mfa_fail_counter` = 0, `mfa_last_fail` = null WHERE BINARY `username` = ?", [$user]);
+    }
+
+    /**
      * @param string $ipString
      * @return void
      */
