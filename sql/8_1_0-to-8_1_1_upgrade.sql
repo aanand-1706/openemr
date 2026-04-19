@@ -122,3 +122,15 @@ ALTER TABLE `form_eye_antseg`
 ALTER TABLE `background_services`
   ADD COLUMN `lock_expires_at` datetime DEFAULT NULL COMMENT 'Lease expiration. Compared with NOW() on acquire, so the stored value uses whatever session timezone is in effect (OpenEMR syncs it to gbl_time_zone). Set on acquire, cleared on release. Expired leases are automatically stolen by the next worker.';
 #EndIf
+
+#IfMissingColumn users_secure total_mfa_fail_counter
+ALTER TABLE `users_secure` ADD `total_mfa_fail_counter` bigint DEFAULT 0;
+#EndIf
+
+#IfMissingColumn users_secure mfa_fail_counter
+ALTER TABLE `users_secure` ADD `mfa_fail_counter` INT(11) DEFAULT '0';
+#EndIf
+
+#IfMissingColumn users_secure mfa_last_fail
+ALTER TABLE `users_secure` ADD `mfa_last_fail` datetime DEFAULT NULL;
+#EndIf

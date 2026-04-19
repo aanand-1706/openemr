@@ -9885,6 +9885,9 @@ CREATE TABLE `users_secure` (
   `login_fail_counter` INT(11) DEFAULT '0',
   `last_login_fail` datetime DEFAULT NULL,
   `auto_block_emailed` tinyint DEFAULT 0,
+  `total_mfa_fail_counter` bigint DEFAULT 0,
+  `mfa_fail_counter` INT(11) DEFAULT '0',
+  `mfa_last_fail` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `USERNAME_ID` (`id`,`username`)
 ) ENGINE=InnoDb;
