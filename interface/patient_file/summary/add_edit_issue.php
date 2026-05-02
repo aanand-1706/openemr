@@ -203,6 +203,19 @@ function ActiveIssueCodeRecycleFn($thispid2, $ISSUE_TYPES2): void
 
 // If we are saving, then save and close the window.
 //
+/**
+ * Validate that a raw date/datetime string matches an expected format.
+ * Returns the raw value when valid, or null when it does not match.
+ */
+function parseDateInput(string $raw): ?string
+{
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $raw)
+        ?: DateTimeImmutable::createFromFormat('Y-m-d', $raw)
+        ?: DateTimeImmutable::createFromFormat('m/d/Y', $raw)
+        ?: DateTimeImmutable::createFromFormat('d/m/Y', $raw);
+    return ($dt !== false) ? $raw : null;
+}
+
 if (!empty($_POST['form_save'])) {
     CsrfUtils::checkCsrfInput(INPUT_POST, dieOnFail: true);
 
@@ -212,6 +225,24 @@ if (!empty($_POST['form_save'])) {
         if ($i++ == $_POST['form_type']) {
             $text_type = $key;
         }
+    }
+
+    if (!empty($_POST['form_begin']) && parseDateInput($_POST['form_begin']) === null) {
+        http_response_code(400);
+        echo xlt('Invalid begin date format.');
+        exit;
+    }
+
+    if (!empty($_POST['form_end']) && parseDateInput($_POST['form_end']) === null) {
+        http_response_code(400);
+        echo xlt('Invalid end date format.');
+        exit;
+    }
+
+    if (!empty($_POST['form_return']) && parseDateInput($_POST['form_return']) === null) {
+        http_response_code(400);
+        echo xlt('Invalid return date format.');
+        exit;
     }
 
     $form_begin = !empty($_POST['form_begin']) ? DateTimeToYYYYMMDDHHMMSS($_POST['form_begin']) : null;
@@ -689,9 +720,32 @@ function getCodeText($code)
         document.getElementById('form_title').value = data.standard_elements.deviceName;
     }
 
+    function isValidDateInput(value) {
+        if (value === '') {
+            return true;
+        }
+        // Accept YYYY-MM-DD HH:MM:SS, YYYY-MM-DD, MM/DD/YYYY, or DD/MM/YYYY
+        return /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(value)
+            || /^\d{2}\/\d{2}\/\d{4}$/.test(value);
+    }
+
     // Check for errors when the form is submitted.
     function validate() {
         var f = document.forms[0];
+
+        if (!isValidDateInput(f.form_begin.value)) {
+            alert(<?php echo xlj('Invalid begin date format.'); ?>);
+            return false;
+        }
+        if (!isValidDateInput(f.form_end.value)) {
+            alert(<?php echo xlj('Invalid end date format.'); ?>);
+            return false;
+        }
+        if (f.form_return && !isValidDateInput(f.form_return.value)) {
+            alert(<?php echo xlj('Invalid return date format.'); ?>);
+            return false;
+        }
+
         var begin_date_val = f.form_begin.value;
         begin_date_val = begin_date_val ? DateToYYYYMMDDHHMMSS_js(begin_date_val) : begin_date_val;
         var end_date_val = f.form_end.value;
