@@ -86,6 +86,28 @@ function eventTypeChange(eventname)
          }
 }
 
+function isValidDateInput(value) {
+    if (value === '') {
+        return true;
+    }
+    // Accept YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
+    return /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(value);
+}
+
+function validateDates() {
+    var startVal = document.getElementById('start_date').value;
+    var endVal   = document.getElementById('end_date').value;
+    if (!isValidDateInput(startVal)) {
+        alert('<?php echo xla('Invalid start date format.'); ?>');
+        return false;
+    }
+    if (!isValidDateInput(endVal)) {
+        alert('<?php echo xla('Invalid end date format.'); ?>');
+        return false;
+    }
+    return true;
+}
+
 // VicarePlus :: This invokes the find-patient popup.
  function sel_patient() {
   dlgopen('../main/calendar/find_patient_popup.php?pflag=0', '_blank', 500, 400);
@@ -105,6 +127,29 @@ function eventTypeChange(eventname)
 <br />
 <?php
 $err_message = 0;
+
+/**
+ * Validate that a raw date/datetime string matches an expected format.
+ * Returns the raw value when valid, or null when it does not match.
+ */
+function parseReportDate(string $raw): ?string
+{
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $raw)
+        ?: DateTimeImmutable::createFromFormat('Y-m-d', $raw);
+    return ($dt !== false) ? $raw : null;
+}
+
+if (!empty($_GET["start_date"]) && parseReportDate($_GET["start_date"]) === null) {
+    http_response_code(400);
+    echo xlt('Invalid start date format.');
+    exit;
+}
+
+if (!empty($_GET["end_date"]) && parseReportDate($_GET["end_date"]) === null) {
+    http_response_code(400);
+    echo xlt('Invalid end date format.');
+    exit;
+}
 
 $start_date = (!empty($_GET["start_date"])) ? DateTimeToYYYYMMDDHHMMSS($_GET["start_date"]) : date("Y-m-d") . " 00:00:00";
 $end_date = (!empty($_GET["end_date"])) ? DateTimeToYYYYMMDDHHMMSS($_GET["end_date"]) : date("Y-m-d") . " 23:59:59";
@@ -132,7 +177,7 @@ if (empty($form_patient)) {
 
 ?>
 <br />
-<FORM METHOD="GET" name="theform" id="theform" onSubmit='top.restoreSession()'>
+<FORM METHOD="GET" name="theform" id="theform" onSubmit='return top.restoreSession() && validateDates()'>
 <input type="hidden" name="csrf_token_form" value="<?php echo CsrfUtils::collectCsrfToken(session: $session); ?>" />
 <?php
 
